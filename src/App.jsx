@@ -235,7 +235,7 @@ export default function App() {
 
         {gameState === 'START' && (
           <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <h1 style={{ fontSize: 'min(5vw, 2rem)', fontWeight: 'bold', marginBottom: '1.5rem', color: '#22d3ee' }}>BRACHIO'S LOVE QUEST</h1>
+            <h1 style={{ fontSize: 'min(5vw, 2rem)', fontWeight: 'bold', marginBottom: '1.5rem', color: '#22d3ee' }}>BCHIPANDO'S LOVE QUEST</h1>
             <button onClick={startGame} style={{ padding: '0.75rem 1.75rem', backgroundColor: '#06b6d4', border: 'none', borderRadius: '9999px', color: 'white', fontSize: 'min(4vw, 1.125rem)', fontWeight: 'bold', cursor: 'pointer' }}>
               START ADVENTURE
             </button>
