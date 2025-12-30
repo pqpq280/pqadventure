@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, RotateCcw, CheckCircle, XCircle, Heart } from 'lucide-react';
 
-/**
- * 💡 화면 여백 처리 및 반응형 대응:
- * 1. 고정된 width 대신 부모 컨테이너의 100%를 사용하도록 변경했습니다.
- * 2. 캔버스의 비율(2:1)을 유지하면서 화면 크기에 따라 리사이징되도록 useEffect를 추가했습니다.
- */
-
 // ==================================================================================
 // 🔧 문제 데이터
 // ==================================================================================
@@ -91,23 +85,21 @@ export default function App() {
   const finalDistanceRef = useRef(0);
   const lastQuizTimeRef = useRef(0);
   
-  // 기준 크기 (좌표 계산용)
+  // 기준 크기 및 속도 설정
   const BASE_WIDTH = 800;
   const BASE_HEIGHT = 400;
   const GROUND_Y = 320;
-  const RUN_SPEED = 4;
+  const RUN_SPEED = 7; // 기존 4에서 7로 상향 (달리기 속도)
   const PIXEL_SIZE = 6; 
+  const QUIZ_INTERVAL = 80; // 기존 150에서 80으로 단축 (뛰는 시간 대폭 감소)
 
-  // 화면 크기 조절 대응
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
         const { width } = containerRef.current.getBoundingClientRect();
-        // 2:1 비율 유지
         setDimensions({ width: width, height: width / 2 });
       }
     };
-
     window.addEventListener('resize', handleResize);
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
@@ -132,14 +124,11 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
-    // 비율 계산 (좌표 보정용)
     const scale = dimensions.width / BASE_WIDTH;
     const currentGroundY = GROUND_Y * scale;
 
     ctx.fillStyle = '#A5F3FC'; 
     ctx.fillRect(0, 0, dimensions.width, dimensions.height);
-
     ctx.fillStyle = '#8B4513';
     ctx.fillRect(0, currentGroundY, dimensions.width, 10 * scale);
     ctx.fillStyle = '#D2B48C';
@@ -150,7 +139,8 @@ export default function App() {
       gameTimeRef.current += 1;
       
       if (currentQuizIndex < QUIZ_DATA.length) {
-        if (gameTimeRef.current - lastQuizTimeRef.current > 150) {
+        // 💡 뛰는 시간 조절: QUIZ_INTERVAL(80) 프레임마다 퀴즈 발생
+        if (gameTimeRef.current - lastQuizTimeRef.current > QUIZ_INTERVAL) {
            setGameState('QUIZ');
         }
       } else {
@@ -158,16 +148,15 @@ export default function App() {
         if (finalDistanceRef.current > 350) setGameState('WIN');
       }
     } else if (gameState === 'METEOR') {
-      meteorPosRef.current.y += 10;
+      meteorPosRef.current.y += 12;
       meteorPosRef.current.x += 2;
       if (meteorPosRef.current.y > GROUND_Y - 40) setGameState('GAMEOVER');
     }
 
-    const bounce = (gameState === 'RUNNING' || gameState === 'WIN') ? Math.sin(gameTimeRef.current * 0.2) * 4 : 0;
+    const bounce = (gameState === 'RUNNING' || gameState === 'WIN') ? Math.sin(gameTimeRef.current * 0.3) * 5 : 0;
     let playerX = 80;
     if (gameState === 'WIN') playerX = Math.min(80 + finalDistanceRef.current, BASE_WIDTH / 2 - 80);
 
-    // 플레이어 (스케일 적용)
     drawPixelArt(ctx, BRACHIO_PIXELS, playerX * scale, (GROUND_Y - (BRACHIO_PIXELS.length * PIXEL_SIZE) - bounce) * scale, 
       { 1: '#67E8F9', 2: '#083344', 3: '#22D3EE' }, PIXEL_SIZE * scale);
 
@@ -186,7 +175,6 @@ export default function App() {
       drawPixelArt(ctx, METEOR_PIXELS, meteorPosRef.current.x * scale, meteorPosRef.current.y * scale, 
         { 1: '#EA580C', 2: '#7C2D12' }, PIXEL_SIZE * 1.5 * scale);
     }
-
     requestRef.current = requestAnimationFrame(loop);
   };
 
@@ -217,46 +205,45 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'monospace', padding: '1rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif', padding: '10px', overflow: 'hidden' }}>
       <div 
         ref={containerRef}
         style={{ 
           position: 'relative', 
-          border: '8px solid #0891b2', 
-          borderRadius: '0.5rem', 
+          border: '4px solid #0891b2', 
+          borderRadius: '0.75rem', 
           overflow: 'hidden', 
           backgroundColor: 'black', 
           width: '100%', 
           maxWidth: '800px', 
-          aspectRatio: '2 / 1' 
+          aspectRatio: '2 / 1',
+          touchAction: 'none'
         }}
       >
-        <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} />
+        <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} style={{ display: 'block' }} />
 
         {gameState === 'START' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <h1 style={{ fontSize: 'min(5vw, 2rem)', fontWeight: 'bold', marginBottom: '1.5rem', color: '#22d3ee' }}>BCHIPANDO'S LOVE QUEST</h1>
-            <button onClick={startGame} style={{ padding: '0.75rem 1.75rem', backgroundColor: '#06b6d4', border: 'none', borderRadius: '9999px', color: 'white', fontSize: 'min(4vw, 1.125rem)', fontWeight: 'bold', cursor: 'pointer' }}>
-              START ADVENTURE
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px' }}>
+            <h1 style={{ fontSize: 'min(8vw, 2.2rem)', fontWeight: 'bold', marginBottom: '1.5rem', color: '#22d3ee' }}>BCHIPANDO'S LOVE QUEST</h1>
+            <button onClick={startGame} style={{ padding: '0.8rem 2rem', backgroundColor: '#06b6d4', border: 'none', borderRadius: '9999px', color: 'white', fontSize: 'min(4.5vw, 1.1rem)', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 14px rgba(6,182,212,0.4)' }}>
+              모험 시작하기
             </button>
           </div>
         )}
 
         {gameState === 'QUIZ' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', padding: '1.25rem', width: '100%', maxWidth: '500px', border: '4px solid #06b6d4' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <h2 style={{ fontSize: '0.875rem', fontWeight: 'bold', color: '#0891b2' }}>Quiz {currentQuizIndex + 1}</h2>
-              </div>
-              <p style={{ fontSize: '1rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '1rem', lineHeight: 1.2 }}>{QUIZ_DATA[currentQuizIndex].question}</p>
-              <div style={{ display: 'grid', gap: '0.5rem' }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '1rem', padding: '15px', width: '100%', maxWidth: '500px', border: '3px solid #06b6d4', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+              <h2 style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#0891b2', marginBottom: '4px' }}>질문 {currentQuizIndex + 1} / {QUIZ_DATA.length}</h2>
+              <p style={{ fontSize: 'min(4.2vw, 1.05rem)', fontWeight: 'bold', color: '#1e293b', marginBottom: '12px', lineHeight: 1.3 }}>{QUIZ_DATA[currentQuizIndex].question}</p>
+              <div style={{ display: 'grid', gap: '8px' }}>
                 {QUIZ_DATA[currentQuizIndex].options.map((opt, i) => (
                   <button 
                     key={i} 
                     onClick={() => handleAnswer(i)} 
-                    style={{ width: '100%', textAlign: 'left', padding: '0.6rem', borderRadius: '0.5rem', border: '2px solid #f1f5f9', backgroundColor: 'white', color: '#334155', fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer' }}
+                    style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '0.75rem', border: '2px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#334155', fontWeight: '600', fontSize: 'min(3.6vw, 0.85rem)', cursor: 'pointer' }}
                   >
-                    <span style={{ marginRight: '0.5rem', color: '#06b6d4' }}>{i+1}.</span> {opt}
+                    <span style={{ marginRight: '6px', color: '#06b6d4' }}>{i+1}.</span> {opt}
                   </button>
                 ))}
               </div>
@@ -265,21 +252,22 @@ export default function App() {
         )}
 
         {gameState === 'GAMEOVER' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(69,10,10,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <XCircle size={dimensions.width * 0.08} color="#ef4444" style={{ marginBottom: '1rem' }} />
-            <h2 style={{ fontSize: 'min(6vw, 2rem)', fontWeight: '900', marginBottom: '1.5rem' }}>EXTINCTION...</h2>
-            <button onClick={startGame} style={{ padding: '0.75rem 1.5rem', backgroundColor: '#dc2626', border: 'none', borderRadius: '9999px', color: 'white', fontSize: '1.125rem', fontWeight: 'bold', cursor: 'pointer' }}>RETRY</button>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(69,10,10,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+            <XCircle size={dimensions.width * 0.1} color="#ef4444" style={{ marginBottom: '1rem' }} />
+            <h2 style={{ fontSize: 'min(8vw, 2.2rem)', fontWeight: '900', marginBottom: '1.5rem', color: 'white' }}>멸종했습니다...</h2>
+            <button onClick={startGame} style={{ padding: '0.8rem 1.8rem', backgroundColor: '#dc2626', border: 'none', borderRadius: '9999px', color: 'white', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>다시 시도</button>
           </div>
         )}
 
         {gameState === 'WIN' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(236,72,153,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <Heart size={dimensions.width * 0.08} color="#ec4899" fill="#ec4899" style={{ marginBottom: '1rem' }} />
-            <h2 style={{ fontSize: 'min(6vw, 2rem)', fontWeight: '900' }}>HAPPY ENDING!</h2>
-            <button onClick={startGame} style={{ marginTop: '1.5rem', padding: '0.75rem 1.5rem', backgroundColor: 'white', border: 'none', borderRadius: '9999px', color: '#db2777', fontSize: '1.125rem', fontWeight: 'bold', cursor: 'pointer' }}>PLAY AGAIN</button>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(236,72,153,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+            <Heart size={dimensions.width * 0.12} color="#ec4899" fill="#ec4899" style={{ marginBottom: '1rem' }} />
+            <h2 style={{ fontSize: 'min(9vw, 2.8rem)', fontWeight: '900', color: 'white' }}>해피 엔딩!</h2>
+            <button onClick={startGame} style={{ marginTop: '1.5rem', padding: '0.8rem 1.8rem', backgroundColor: 'white', border: 'none', borderRadius: '9999px', color: '#db2777', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>한 번 더 하기</button>
           </div>
         )}
       </div>
+      <p style={{ marginTop: '15px', fontSize: '0.75rem', color: '#64748b' }}>모바일은 터치로, PC는 클릭으로 조작하세요. 판도의 멸종을 막아주세요. </p>
     </div>
   );
 }
