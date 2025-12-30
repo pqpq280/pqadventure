@@ -27,7 +27,7 @@ const QUIZ_DATA = [
   },
   {
     question: "파파비오에 대한 설명으로 옳지 않은 것은?",
-    options: ["[삭제]", "[편집]", "[편집]", "[제거]"],
+    options: ["[편집]", "[삭제]", "[편집]", "[제거]"],
     answer: 3
   }
 ];
@@ -78,26 +78,28 @@ export default function App() {
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
   
-  const requestRef = useRef();
-  const gameTimeRef = useRef(0);
-  const bgOffsetRef = useRef(0);
-  const meteorPosRef = useRef({ x: 0, y: -50 });
-  const finalDistanceRef = useRef(0);
-  const lastQuizTimeRef = useRef(0);
-  
-  // 기준 크기 및 속도 설정
+  const stateRef = useRef({
+    gameState: 'START',
+    currentQuizIndex: 0,
+    gameTime: 0,
+    lastQuizTime: 0,
+    finalDistance: 0,
+    meteorPos: { x: 140, y: -100 }
+  });
+
   const BASE_WIDTH = 800;
   const BASE_HEIGHT = 400;
-  const GROUND_Y = 320;
-  const RUN_SPEED = 7; // 기존 4에서 7로 상향 (달리기 속도)
+  const RUN_SPEED = 7; 
   const PIXEL_SIZE = 6; 
-  const QUIZ_INTERVAL = 80; // 기존 150에서 80으로 단축 (뛰는 시간 대폭 감소)
+  const QUIZ_INTERVAL = 80; 
 
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
         const { width } = containerRef.current.getBoundingClientRect();
-        setDimensions({ width: width, height: width / 2 });
+        const vh = window.innerHeight;
+        const targetHeight = Math.min(width * 0.65, vh * 0.6); 
+        setDimensions({ width: width, height: targetHeight });
       }
     };
     window.addEventListener('resize', handleResize);
@@ -105,14 +107,17 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    stateRef.current.gameState = gameState;
+    stateRef.current.currentQuizIndex = currentQuizIndex;
+  }, [gameState, currentQuizIndex]);
+
   const drawPixelArt = (ctx, pixels, startX, startY, colorMap, scale = 1, flip = false) => {
     pixels.forEach((row, y) => {
       row.forEach((pixel, x) => {
         if (pixel !== 0) {
           ctx.fillStyle = colorMap[pixel] || '#000';
-          const drawX = flip 
-            ? startX + (row.length - 1 - x) * scale 
-            : startX + x * scale;
+          const drawX = flip ? startX + (row.length - 1 - x) * scale : startX + x * scale;
           const drawY = startY + y * scale;
           ctx.fillRect(Math.floor(drawX), Math.floor(drawY), Math.ceil(scale), Math.ceil(scale));
         }
@@ -120,130 +125,120 @@ export default function App() {
     });
   };
 
-  const loop = () => {
+  useEffect(() => {
+    let animationId;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const scale = dimensions.width / BASE_WIDTH;
-    const currentGroundY = GROUND_Y * scale;
 
-    ctx.fillStyle = '#A5F3FC'; 
-    ctx.fillRect(0, 0, dimensions.width, dimensions.height);
-    ctx.fillStyle = '#8B4513';
-    ctx.fillRect(0, currentGroundY, dimensions.width, 10 * scale);
-    ctx.fillStyle = '#D2B48C';
-    ctx.fillRect(0, currentGroundY + (10 * scale), dimensions.width, dimensions.height - currentGroundY);
-
-    if (gameState === 'RUNNING') {
-      bgOffsetRef.current += RUN_SPEED;
-      gameTimeRef.current += 1;
+    const render = () => {
+      const { gameState: curState, currentQuizIndex: curIdx, gameTime, lastQuizTime, finalDistance, meteorPos } = stateRef.current;
+      const scaleX = dimensions.width / BASE_WIDTH;
+      const scaleY = dimensions.height / BASE_HEIGHT;
+      const scale = Math.min(scaleX, scaleY);
       
-      if (currentQuizIndex < QUIZ_DATA.length) {
-        // 💡 뛰는 시간 조절: QUIZ_INTERVAL(80) 프레임마다 퀴즈 발생
-        if (gameTimeRef.current - lastQuizTimeRef.current > QUIZ_INTERVAL) {
-           setGameState('QUIZ');
+      const currentGroundY = dimensions.height - (80 * scaleY);
+
+      ctx.fillStyle = '#A5F3FC'; 
+      ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(0, currentGroundY, dimensions.width, 10 * scale);
+      ctx.fillStyle = '#D2B48C';
+      ctx.fillRect(0, currentGroundY + (10 * scale), dimensions.width, dimensions.height - currentGroundY);
+
+      if (curState === 'RUNNING') {
+        stateRef.current.gameTime += 1;
+        if (curIdx < QUIZ_DATA.length) {
+          if (stateRef.current.gameTime - lastQuizTime > QUIZ_INTERVAL) {
+            setGameState('QUIZ');
+          }
+        } else {
+          stateRef.current.finalDistance += RUN_SPEED;
+          if (stateRef.current.finalDistance > 300) setGameState('WIN');
         }
-      } else {
-        finalDistanceRef.current += RUN_SPEED;
-        if (finalDistanceRef.current > 350) setGameState('WIN');
+      } else if (curState === 'METEOR') {
+        stateRef.current.meteorPos.y += 18 * scale;
+        stateRef.current.meteorPos.x += 3 * scale;
+        if (stateRef.current.meteorPos.y > currentGroundY - (30 * scale)) setGameState('GAMEOVER');
       }
-    } else if (gameState === 'METEOR') {
-      meteorPosRef.current.y += 12;
-      meteorPosRef.current.x += 2;
-      if (meteorPosRef.current.y > GROUND_Y - 40) setGameState('GAMEOVER');
-    }
 
-    const bounce = (gameState === 'RUNNING' || gameState === 'WIN') ? Math.sin(gameTimeRef.current * 0.3) * 5 : 0;
-    let playerX = 80;
-    if (gameState === 'WIN') playerX = Math.min(80 + finalDistanceRef.current, BASE_WIDTH / 2 - 80);
+      const bounce = (curState === 'RUNNING' || curState === 'WIN') ? Math.sin(stateRef.current.gameTime * 0.4) * 6 * scale : 0;
+      let playerX = 60 * scaleX;
+      if (curState === 'WIN') playerX = Math.min(playerX + (finalDistance * scaleX), dimensions.width / 2 - (50 * scaleX));
 
-    drawPixelArt(ctx, BRACHIO_PIXELS, playerX * scale, (GROUND_Y - (BRACHIO_PIXELS.length * PIXEL_SIZE) - bounce) * scale, 
-      { 1: '#67E8F9', 2: '#083344', 3: '#22D3EE' }, PIXEL_SIZE * scale);
+      drawPixelArt(ctx, BRACHIO_PIXELS, playerX, currentGroundY - (BRACHIO_PIXELS.length * PIXEL_SIZE * scale) - bounce, 
+        { 1: '#67E8F9', 2: '#083344', 3: '#22D3EE' }, PIXEL_SIZE * scale);
 
-    if (currentQuizIndex >= QUIZ_DATA.length) {
-      const alloX = Math.max(BASE_WIDTH - 150, BASE_WIDTH / 2 + 20);
-      drawPixelArt(ctx, ALLO_PIXELS, alloX * scale, (GROUND_Y - (ALLO_PIXELS.length * PIXEL_SIZE) - bounce) * scale, 
-        { 1: '#F472B6', 2: '#500724', 3: '#EC4899' }, PIXEL_SIZE * scale, true);
-      
-      if (gameState === 'WIN') {
-        ctx.font = `${40 * scale}px Arial`;
-        ctx.fillText('❤️', (BASE_WIDTH / 2 - 20) * scale, (GROUND_Y - 150) * scale);
+      if (curIdx >= QUIZ_DATA.length) {
+        const alloX = dimensions.width - (120 * scaleX);
+        drawPixelArt(ctx, ALLO_PIXELS, alloX, currentGroundY - (ALLO_PIXELS.length * PIXEL_SIZE * scale) - bounce, 
+          { 1: '#F472B6', 2: '#500724', 3: '#EC4899' }, PIXEL_SIZE * scale, true);
+        if (curState === 'WIN') {
+          ctx.font = `${30 * scale}px Arial`;
+          ctx.fillText('❤️', dimensions.width / 2 - (15 * scale), currentGroundY - (100 * scale));
+        }
       }
-    }
 
-    if (gameState === 'METEOR') {
-      drawPixelArt(ctx, METEOR_PIXELS, meteorPosRef.current.x * scale, meteorPosRef.current.y * scale, 
-        { 1: '#EA580C', 2: '#7C2D12' }, PIXEL_SIZE * 1.5 * scale);
-    }
-    requestRef.current = requestAnimationFrame(loop);
-  };
+      if (curState === 'METEOR') {
+        drawPixelArt(ctx, METEOR_PIXELS, meteorPos.x * scaleX, meteorPos.y, 
+          { 1: '#EA580C', 2: '#7C2D12' }, PIXEL_SIZE * 1.5 * scale);
+      }
 
-  useEffect(() => {
-    requestRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(requestRef.current);
-  }, [gameState, currentQuizIndex, dimensions]);
+      animationId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animationId);
+  }, [dimensions, gameState]);
 
   const startGame = () => {
-    setGameState('RUNNING');
+    stateRef.current = {
+      gameState: 'RUNNING',
+      currentQuizIndex: 0,
+      gameTime: 0,
+      lastQuizTime: 0,
+      finalDistance: 0,
+      meteorPos: { x: 140, y: -100 }
+    };
     setCurrentQuizIndex(0);
-    gameTimeRef.current = 0;
-    bgOffsetRef.current = 0;
-    finalDistanceRef.current = 0;
-    lastQuizTimeRef.current = 0;
-    meteorPosRef.current = { x: 140, y: -100 };
+    setGameState('RUNNING');
   };
 
   const handleAnswer = (idx) => {
     if (idx === QUIZ_DATA[currentQuizIndex].answer) {
-      setCurrentQuizIndex(p => p + 1);
-      lastQuizTimeRef.current = gameTimeRef.current;
+      const nextIdx = currentQuizIndex + 1;
+      stateRef.current.lastQuizTime = stateRef.current.gameTime;
+      stateRef.current.currentQuizIndex = nextIdx;
+      setCurrentQuizIndex(nextIdx);
       setGameState('RUNNING');
     } else {
-      meteorPosRef.current = { x: 140, y: -100 };
+      stateRef.current.meteorPos = { x: 140, y: -50 };
       setGameState('METEOR');
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif', padding: '10px', overflow: 'hidden' }}>
-      <div 
-        ref={containerRef}
-        style={{ 
-          position: 'relative', 
-          border: '4px solid #0891b2', 
-          borderRadius: '0.75rem', 
-          overflow: 'hidden', 
-          backgroundColor: 'black', 
-          width: '100%', 
-          maxWidth: '800px', 
-          aspectRatio: '2 / 1',
-          touchAction: 'none'
-        }}
-      >
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif', overflow: 'hidden', touchAction: 'none', padding: '10px' }}>
+      <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: '800px', height: dimensions.height, backgroundColor: '#000', overflow: 'hidden', borderRadius: '1rem', border: '4px solid #0891b2' }}>
         <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} style={{ display: 'block' }} />
 
         {gameState === 'START' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px' }}>
-            <h1 style={{ fontSize: 'min(8vw, 2.2rem)', fontWeight: 'bold', marginBottom: '1.5rem', color: '#22d3ee' }}>BCHIPANDO'S LOVE QUEST</h1>
-            <button onClick={startGame} style={{ padding: '0.8rem 2rem', backgroundColor: '#06b6d4', border: 'none', borderRadius: '9999px', color: 'white', fontSize: 'min(4.5vw, 1.1rem)', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 14px rgba(6,182,212,0.4)' }}>
-              모험 시작하기
-            </button>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px' }}>
+            <h1 style={{ fontSize: 'min(9vw, 2.5rem)', fontWeight: '900', marginBottom: '25px', color: '#22d3ee', letterSpacing: '-1px' }}>브키판도의 모험</h1>
+            <button onClick={startGame} style={{ padding: '15px 40px', backgroundColor: '#06b6d4', border: 'none', borderRadius: '50px', color: 'white', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 6px 20px rgba(6,182,212,0.5)' }}>모험 시작</button>
           </div>
         )}
 
         {gameState === 'QUIZ' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '1rem', padding: '15px', width: '100%', maxWidth: '500px', border: '3px solid #06b6d4', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
-              <h2 style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#0891b2', marginBottom: '4px' }}>질문 {currentQuizIndex + 1} / {QUIZ_DATA.length}</h2>
-              <p style={{ fontSize: 'min(4.2vw, 1.05rem)', fontWeight: 'bold', color: '#1e293b', marginBottom: '12px', lineHeight: 1.3 }}>{QUIZ_DATA[currentQuizIndex].question}</p>
-              <div style={{ display: 'grid', gap: '8px' }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px' }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '1.25rem', padding: '20px', width: '95%', maxWidth: '500px', border: '4px solid #06b6d4', maxHeight: '95%', overflowY: 'auto' }}>
+              <p style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#0891b2', marginBottom: '8px', textTransform: 'uppercase' }}>QUESTION {currentQuizIndex + 1} / {QUIZ_DATA.length}</p>
+              <p style={{ fontSize: 'min(5vw, 1.25rem)', fontWeight: '800', color: '#0f172a', marginBottom: '20px', lineHeight: '1.4' }}>{QUIZ_DATA[currentQuizIndex].question}</p>
+              <div style={{ display: 'grid', gap: '10px' }}>
                 {QUIZ_DATA[currentQuizIndex].options.map((opt, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => handleAnswer(i)} 
-                    style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '0.75rem', border: '2px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#334155', fontWeight: '600', fontSize: 'min(3.6vw, 0.85rem)', cursor: 'pointer' }}
-                  >
-                    <span style={{ marginRight: '6px', color: '#06b6d4' }}>{i+1}.</span> {opt}
+                  <button key={i} onClick={() => handleAnswer(i)} style={{ textAlign: 'left', padding: '14px 18px', borderRadius: '1rem', border: '2px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#1e293b', fontWeight: '700', fontSize: 'min(4.2vw, 1rem)', cursor: 'pointer', lineHeight: '1.3', display: 'flex', alignItems: 'flex-start' }} onTouchStart={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'} onTouchEnd={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}>
+                    <span style={{ color: '#06b6d4', marginRight: '10px', flexShrink: 0 }}>{i + 1}.</span>
+                    <span>{opt}</span>
                   </button>
                 ))}
               </div>
@@ -251,23 +246,15 @@ export default function App() {
           </div>
         )}
 
-        {gameState === 'GAMEOVER' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(69,10,10,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-            <XCircle size={dimensions.width * 0.1} color="#ef4444" style={{ marginBottom: '1rem' }} />
-            <h2 style={{ fontSize: 'min(8vw, 2.2rem)', fontWeight: '900', marginBottom: '1.5rem', color: 'white' }}>멸종했습니다...</h2>
-            <button onClick={startGame} style={{ padding: '0.8rem 1.8rem', backgroundColor: '#dc2626', border: 'none', borderRadius: '9999px', color: 'white', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>다시 시도</button>
-          </div>
-        )}
-
-        {gameState === 'WIN' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(236,72,153,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-            <Heart size={dimensions.width * 0.12} color="#ec4899" fill="#ec4899" style={{ marginBottom: '1rem' }} />
-            <h2 style={{ fontSize: 'min(9vw, 2.8rem)', fontWeight: '900', color: 'white' }}>해피 엔딩!</h2>
-            <button onClick={startGame} style={{ marginTop: '1.5rem', padding: '0.8rem 1.8rem', backgroundColor: 'white', border: 'none', borderRadius: '9999px', color: '#db2777', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>한 번 더 하기</button>
-          </div>
+        {(gameState === 'GAMEOVER' || gameState === 'WIN') && (
+           <div style={{ position: 'absolute', inset: 0, backgroundColor: gameState === 'WIN' ? 'rgba(236,72,153,0.6)' : 'rgba(69,10,10,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '20px' }}>
+             {gameState === 'WIN' ? <Heart size={80} color="white" fill="white" /> : <XCircle size={80} color="#ef4444" />}
+             <h2 style={{ fontSize: '3rem', fontWeight: '900', color: 'white', margin: '20px 0' }}>{gameState === 'WIN' ? 'HAPPY ENDING!' : '멸종했습니다...'}</h2>
+             <button onClick={startGame} style={{ padding: '15px 45px', backgroundColor: 'white', color: gameState === 'WIN' ? '#ec4899' : '#000', borderRadius: '50px', fontWeight: '900', border: 'none', cursor: 'pointer', fontSize: '1.3rem', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }}>다시 시작하기</button>
+           </div>
         )}
       </div>
-      <p style={{ marginTop: '15px', fontSize: '0.75rem', color: '#64748b' }}>모바일은 터치로, PC는 클릭으로 조작하세요. 판도의 멸종을 막아주세요. </p>
+      <div style={{ marginTop: '15px', fontSize: '0.85rem', color: '#94a3b8', fontWeight: '500' }}>브키판도의 멸종을 막아주세요!</div>
     </div>
   );
 }
